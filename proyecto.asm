@@ -8,15 +8,15 @@ section .data
     ; Definir mensajes de error para cuando la cadena ingresada exceda el límite de 50 caracteres
     msg_error_longitud db "La cadena ingresada excede el limite de 50 caracteres.", 0xA, 0 
     len_error_longitud equ $ - msg_error_longitud
+
+    ; Nuevos mensajes para la funcionalidad de vocal
+    msg_ingresa_vocal db "Ingresa una vocal (a, e, i, o, u): ", 0
+    len_ingresa_vocal equ $ - msg_ingresa_vocal
+
+    msg_error_vocal db "Error: Debes ingresar solo un caracter de vocal.", 10
+    len_error_vocal equ $ - msg_error_vocal
+
     max_caracteres equ 50  ; Definirmos una variable para el límite maximo de caracteres de la cadena
-
-
-    ; msg_resultado db "Cadena ingresada: ", 0            ;------------Es de borrar esto (solo para pruebas)
-    ; len_resultado equ $ - msg_resultado  
-               
-    ; salto_linea db 0xA     ; salto de línea '\n'        ;------------Hasta aca es de borrar (solo para dar formato visual)
-
-
 
 section .bss
     buffer resb max_caracteres + 1      ; Reservar 51 bytes para la cadena (50 caracteres + '\n')
@@ -39,17 +39,55 @@ IngresarCadena:
     mov rax, 0              ; syscall read
     mov rdi, 0              ; file descriptor 0 (stdin)
     mov rsi, buffer         ; dirección donde guardar la cadena leída
-    mov rdx, max_caracteres + 1             ; máximo de bytes a leer (50 + '\n')
-
+    mov rdx, max_caracteres + 1 ; máximo de bytes a leer (50 + '\n')
     syscall                 ; llama a read(0, buffer, 51)
+
     mov [longitud], al      ; guardar en 'longitud' el número de bytes leídos (valor devuelto por read en rax)
     call ValidarLongitud    ; llamamos la etiqueta para validar la longitud de la cadena
 
-    ; Preguntamos "Deseas realizar otro?" Solo si la cadena fue válida
+IngresarVocal:
+    ; Mostrar mensaje para ingresar vocal
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, msg_ingresa_vocal
+    mov rdx, len_ingresa_vocal
+    syscall
+
+    ; Leer hasta 51 bytes (para capturar toda la línea si es larga)
+    mov rax, 0
+    mov rdi, 0
+    mov rsi, buffer
+    mov rdx, max_caracteres + 1
+    syscall
+
+    mov [longitud], al          ; guardar la cantidad leída
+
+    ; Validar que sea solo 1 carácter + '\n' = 2 bytes
+    cmp byte [longitud], 2
+    je .vocal_valida
+
+    ; Mostrar mensaje de error
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, msg_error_vocal
+    mov rdx, len_error_vocal
+    syscall
+
+    ; Limpiar buffer SOLO si se leyeron 51 bytes (exceso de caracteres)
+    cmp byte [longitud], max_caracteres + 1
+    je .limpiar_buffer
+    jmp IngresarVocal           ; volver a pedir la vocal sin limpiar
+
+.limpiar_buffer:
+    call LimpiarBufferEntrada   ; limpiar stdin solo si hay exceso
+    jmp IngresarVocal
+
+.vocal_valida:
+    ; Continuar con el flujo normal
     jmp RealizarOtro
 
 RealizarOtro:
-    ; Preguntar al usuario
+    ; Preguntar al usuario si desea realizar otra operación
     mov rax, 1              ; syscall write
     mov rdi, 1              ; stdout
     mov rsi, msg_otro       ; dirección del mensaje
@@ -63,30 +101,12 @@ RealizarOtro:
     mov rdx, 2              ; leer máximo 2 bytes ('s'/'n' + '\n')
     syscall                 ; leer respuesta del usuario
 
-
-    ; ; Mostrar mensaje de cadena ingresada       ------------------------------------------Esto es  de borrarlo
-    ; mov rax, 1
-    ; mov rdi, 1
-    ; mov rsi, msg_resultado
-    ; mov rdx, len_resultado
-    ; syscall
-
-    ; ; Mostrar la cadena que se metio 
-    ; movzx rdx, byte [longitud]
-    ; dec rdx                 
-    ; mov rax, 1
-    ; mov rdi, 1
-    ; mov rsi, buffer
-    ; syscall                         ;-----------------------------------------------------Hasta aca es de borrar
-
-    
-
-      ; Evaluar si se repite
+    ; Evaluar si se repite
     mov al, [respuesta]     ; cargar primer carácter de la respuesta
     cmp al, 's'             ; comparar si es 's'
     je IngresarCadena       ; si es 's', saltar a IngresarCadena para repetir el proceso
 
-     ; Terminar programa
+    ; Terminar programa
     mov rax, 60             ; syscall exit
     xor rdi, rdi            ; exit code 0
     syscall                 ; terminar el programa limpiamente
@@ -110,8 +130,8 @@ ValidarLongitud:
     jbe .longitud_valida           ; Si es menor o igual, entonces es una cadena válida
     
     ; Mostrar error cuando la Cadena excede límite (caso sin newline)
-    ; Esto ocurre cuando se ingresan más de 50 caracteres sin Enter anq no debe ocurrir porque el read lo limita
     jmp .mostrar_error_longitud
+
 .tiene_salto_linea:
     ; Verificamos si la lectura incluye el '\n' (cuando el usuario presiona Enter)
     cmp rax, max_caracteres+1      ; Compara con 51 (50 caracteres + '\n')
@@ -124,15 +144,11 @@ ValidarLongitud:
     mov rdx, len_error_longitud    ; Longitud del mensaje de error
     syscall                        ; Ejecutar syscall
     
-    ; Limpiamos el stdin leyendo bytes hasta encontrar un '\n'
-    ; Esto es importante para que se reinicie el proceso cuando se ingresa una cadena que exceda el límite
     call LimpiarBufferEntrada      
-    ; Reiniciar el proceso, para solicitar nuevamente la cadena
     jmp IngresarCadena
 
 .longitud_valida:
     ret     ; Retornar del subprograma
-
 
 ; ================================================================
 ; SUBRUTINA LimpiarBufferEntrada
@@ -144,7 +160,6 @@ ValidarLongitud:
 ;   - Si encontramos '\n', retornamos
 ; ================================================================
 LimpiarBufferEntrada:
-    ; Usaremos un buffer temporal de 1 byte
     mov rsi, buffer    ; reutilizamos el buffer, leeremos 1 byte a la vez
 .limpiar_loop:
     mov rax, 0         ; syscall read
