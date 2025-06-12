@@ -16,6 +16,9 @@ section .data
     msg_error_vocal db "Error: Debes ingresar solo un caracter de vocal.", 10
     len_error_vocal equ $ - msg_error_vocal
 
+    msg_error_no_vocal db "Error: El caracter ingresado no es una vocal valida.", 10 ; Mensaje de error si lo que ha ingresado el usuario no es una vocal
+    len_error_no_vocal equ $ - msg_error_no_vocal
+
     max_caracteres equ 50  ; Definirmos una variable para el límite maximo de caracteres de la cadena
 
 section .bss
@@ -80,6 +83,43 @@ IngresarVocal:
 
 .limpiar_buffer:
     call LimpiarBufferEntrada   ; limpiar stdin solo si hay exceso
+    jmp IngresarVocal
+
+.vocal_valida:
+    ; Validar si el carácter ingresado es una vocal válida (a, e, i, o, u ya sean en minúsculas o mayúsculas)
+    mov al, [buffer]        ; Cargar el primer carácter ingresado (sin el '\n')
+    cmp al, 'a'
+    je .vocal_es_valida     ; Si es 'a', es válido
+    cmp al, 'e'
+    je .vocal_es_valida     ; Si es 'e', es válido
+    cmp al, 'i'
+    je .vocal_es_valida     ; Si es 'i', es válido
+    cmp al, 'o'
+    je .vocal_es_valida     ; Si es 'o', es válido
+    cmp al, 'u'
+    je .vocal_es_valida     ; Si es 'u', es válido
+    
+    ; Comparamos ahora con vocales en mayúsculas
+    cmp al, 'A'
+    je .vocal_es_valida
+    cmp al, 'E'
+    je .vocal_es_valida
+    cmp al, 'I'
+    je .vocal_es_valida
+    cmp al, 'O'
+    je .vocal_es_valida
+    cmp al, 'U'
+    je .vocal_es_valida
+
+    ; Si llegó aquí, es porque no es una vocal válida
+    ; entonces mostramos el mensaje de error 
+    mov rax, 1              ; syscall write
+    mov rdi, 1              ; stdout
+    mov rsi, msg_error_no_vocal ; mensaje que indica que no es una vocal
+    mov rdx, len_error_no_vocal ; longitud del mensaje de error
+    syscall
+
+    ; Volvemos a pedir la vocal al usuario
     jmp IngresarVocal
 
 .vocal_valida:
