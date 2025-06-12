@@ -22,9 +22,11 @@ section .data
     max_caracteres equ 50  ; Definirmos una variable para el límite maximo de caracteres de la cadena
 
 section .bss
+    vocal resb 2                        ; Reservar 2 bytes para la vocal ingresada (1 caracter + '\n')
     buffer resb max_caracteres + 1      ; Reservar 51 bytes para la cadena (50 caracteres + '\n')
-    respuesta resb 2    ; Reservar 2 bytes para respuesta del usuario ('s' o 'n' + '\n')
-    longitud resb 1     ; Reservar 1 byte para almacenar la cantidad de caracteres leídos
+    respuesta resb 2                    ; Reservar 2 bytes para respuesta del usuario ('s' o 'n' + '\n')
+    longitud resb 1                     ; Reservar 1 byte para almacenar la cantidad de caracteres leídos
+    longitud_vocal resb 1               ; Reservar 1 byte para almacenar la cantidad de caracteres leídos para la vocal
 
 section .text
     global _start       ; Punto de entrada del programa
@@ -56,62 +58,43 @@ IngresarVocal:
     mov rdx, len_ingresa_vocal
     syscall
 
-    ; Leer hasta 51 bytes (para capturar toda la línea si es larga)
+    ; Leer hasta 2 bytes (para capturar toda la línea si es larga)
     mov rax, 0
     mov rdi, 0
-    mov rsi, buffer
-    mov rdx, max_caracteres + 1
+    mov rsi, vocal
+    mov rdx, 2
     syscall
 
-    mov [longitud], al          ; guardar la cantidad leída
+    mov [longitud_vocal], al          ; guardar la cantidad leída
+    call ValidarLongitudVocal
 
-    ; Validar que sea solo 1 carácter + '\n' = 2 bytes
-    cmp byte [longitud], 2
-    je .vocal_valida
-
-    ; Mostrar mensaje de error
-    mov rax, 1
-    mov rdi, 1
-    mov rsi, msg_error_vocal
-    mov rdx, len_error_vocal
-    syscall
-
-    ; Limpiar buffer SOLO si se leyeron 51 bytes (exceso de caracteres)
-    cmp byte [longitud], max_caracteres + 1
-    je .limpiar_buffer
-    jmp IngresarVocal           ; volver a pedir la vocal sin limpiar
-
-.limpiar_buffer:
-    call LimpiarBufferEntrada   ; limpiar stdin solo si hay exceso
-    jmp IngresarVocal
-
-.vocal_valida:
+.verificar_vocal:
     ; Validar si el carácter ingresado es una vocal válida (a, e, i, o, u ya sean en minúsculas o mayúsculas)
-    mov al, [buffer]        ; Cargar el primer carácter ingresado (sin el '\n')
+    mov al, [vocal]        ; Cargar el primer carácter ingresado (sin el '\n')
     cmp al, 'a'
-    je .vocal_es_valida     ; Si es 'a', es válido
+    je .vocal_valida     ; Si es 'a', es válido
     cmp al, 'e'
-    je .vocal_es_valida     ; Si es 'e', es válido
+    je .vocal_valida     ; Si es 'e', es válido
     cmp al, 'i'
-    je .vocal_es_valida     ; Si es 'i', es válido
+    je .vocal_valida     ; Si es 'i', es válido
     cmp al, 'o'
-    je .vocal_es_valida     ; Si es 'o', es válido
+    je .vocal_valida     ; Si es 'o', es válido
     cmp al, 'u'
-    je .vocal_es_valida     ; Si es 'u', es válido
+    je .vocal_valida     ; Si es 'u', es válido
     
     ; Comparamos ahora con vocales en mayúsculas
     cmp al, 'A'
-    je .vocal_es_valida
+    je .vocal_valida
     cmp al, 'E'
-    je .vocal_es_valida
+    je .vocal_valida
     cmp al, 'I'
-    je .vocal_es_valida
+    je .vocal_valida
     cmp al, 'O'
-    je .vocal_es_valida
+    je .vocal_valida
     cmp al, 'U'
-    je .vocal_es_valida
+    je .vocal_valida
 
-    ; Si llegó aquí, es porque no es una vocal válida
+    ; Si llegó aquí, es porque no es una vocal
     ; entonces mostramos el mensaje de error 
     mov rax, 1              ; syscall write
     mov rdi, 1              ; stdout
@@ -123,8 +106,8 @@ IngresarVocal:
     jmp IngresarVocal
 
 .vocal_valida:
-    ; Continuar con el flujo normal
-    jmp RealizarOtro
+    ; Continuar a realizar el reemplazo de vocales en la cadena principal
+    call SustituirVocalesEnCadena
 
 RealizarOtro:
     ; Preguntar al usuario si desea realizar otra operación
@@ -150,6 +133,8 @@ RealizarOtro:
     mov rax, 60             ; syscall exit
     xor rdi, rdi            ; exit code 0
     syscall                 ; terminar el programa limpiamente
+
+
 
 ; ================================================================
 ; SUBRUTINA ValidarLongitud
@@ -190,6 +175,48 @@ ValidarLongitud:
 .longitud_valida:
     ret     ; Retornar del subprograma
 
+
+
+; ================================================================
+; SUBRUTINA ValidarLongitudVocal
+; Entrada:
+;   - RAX: Longitud de bytes leídos (incluyendo '\n' si existe)
+;   - RSI: Puntero al buffer con la vocal ingresada
+; Salida:
+;   - Si es válida: Continúa ejecución (ret)
+;   - Si no es válida: Muestra error y reinicia el proceso (jmp IngresarVocal)
+; ================================================================
+ValidarLongitudVocal:
+    ; Validacion de longitud vocal
+    cmp byte [rsi+rax -1], 0xA
+    je .tiene_salto_linea
+
+    ; Si no tiene newline, entonces el usuario ingreso exactamente 1 caracter (sin enter)
+    cmp rax, 1
+    je .longitud_valida 
+
+    jmp .mostrar_error_longitud
+
+.tiene_salto_linea:
+    ; Verificamos si la lectura incluye el '\n' (cuando el usuario presiona Enter)
+    cmp rax, 2                   ; Compara con 2 (1 caracter + '\n')
+    je .longitud_valida     ; Si longitud = 2, entonces es una cadena válida
+
+.mostrar_error_longitud:
+    ; Mostrar mensaje de error
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, msg_error_vocal
+    mov rdx, len_error_vocal
+    syscall
+
+    call LimpiarBufferEntradaVocal   ; limpiar stdin solo si hay exceso
+    jmp IngresarVocal
+.longitud_valida:
+    ret     ; Retornar del subprograma
+
+
+
 ; ================================================================
 ; SUBRUTINA LimpiarBufferEntrada
 ; Limpia stdin leyendo bytes hasta encontrar un '\n' (salto de línea)
@@ -209,5 +236,94 @@ LimpiarBufferEntrada:
 
     cmp byte [rsi], 0xA   ; verificamos si el byte leido es '\n' (salto de línea)
     jne .limpiar_loop     ; si no, seguir limpiando
+
+    ret
+
+
+; ================================================================
+; SUBRUTINA LimpiarBufferEntradaVocal
+; Limpia stdin leyendo bytes hasta encontrar un '\n' (salto de línea)
+; Entrada:
+;   - RSI: Puntero al buffer donde se guarda la vocal
+; Salida:
+;   - Si no encontramos '\n', seguimos limpiando
+;   - Si encontramos '\n', retornamos
+; ================================================================
+LimpiarBufferEntradaVocal:
+    mov rsi, vocal    ; reutilizamos el buffer, leeremos 1 byte a la vez
+.limpiar_loop:
+    mov rax, 0         ; syscall read
+    mov rdi, 0         ; stdin
+    mov rdx, 1         ; leer 1 byte
+    syscall
+
+    cmp byte [rsi], 0xA   ; verificamos si el byte leido es '\n' (salto de línea)
+    jne .limpiar_loop     ; si no, seguir limpiando
+
+    ret
+
+
+
+; ================================================================
+; SUBRUTINA SustituirVocalesEnCadena
+; Intercambia todas las vocales de la cadena por la vocal introducida
+; Entrada:
+;   - RSI: Puntero al buffer donde se guarda la cadena
+;   - RCX: Contiene el numero de caracteres de la cadena
+;   - AL: Contiene la vocal
+; Salida:
+;   - Impresión por consola de la cadena con la vocal sustituida
+; ================================================================
+SustituirVocalesEnCadena:
+    mov rsi, buffer             ; RSI apunta al inicio de la cadena
+    movzx rcx, byte [longitud]  ; RCX contiene el numero de caracteres de la cadena
+    mov al, [vocal]             ; AL contiene la nueva vocal
+
+.verificacion:
+    cmp rcx, 0                  ; cuando el contador de caracteres llegue a 0, imprimimos
+    je .imprimir
+
+    mov bl, [rsi]
+
+    ; Comparar con vocales minusculas
+    cmp bl, 'a'
+    je .reemplazar
+    cmp bl, 'e'
+    je .reemplazar
+    cmp bl, 'i'
+    je .reemplazar
+    cmp bl, 'o'
+    je .reemplazar
+    cmp bl, 'u'
+    je .reemplazar
+
+    ; Comparar con vocales mayúsculas
+    cmp bl, 'A'
+    je .reemplazar
+    cmp bl, 'E'
+    je .reemplazar
+    cmp bl, 'I'
+    je .reemplazar
+    cmp bl, 'O'
+    je .reemplazar
+    cmp bl, 'U'
+    je .reemplazar
+
+    jmp .siguiente
+
+.reemplazar:
+    mov [rsi], al               ; Reemplazar la vocal
+
+.siguiente:
+    inc rsi
+    dec rcx
+    jmp .verificacion
+
+.imprimir:
+    mov rax, 1                 ; syscall número 1 = sys_write
+    mov rdi, 1                 ; descriptor de archivo = STDOUT
+    mov rsi, buffer            ; mensaje a imprimir
+    movzx rdx, byte [longitud] ; longitud del mensaje
+    syscall
 
     ret
